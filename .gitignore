@@ -1,0 +1,4 @@
+# build output of package.ps1
+dist/
+# per-user FOV settings written by the mod
+fov.txt
