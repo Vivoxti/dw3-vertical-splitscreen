@@ -1,0 +1,1 @@
+Side-by-side 2-player split screen instead of top/bottom: great for wide and ultrawide monitors. Each player's HUD moves to their half, F8 switches between side-by-side and top/bottom at any time, and each player can widen their own FOV. Requires UE4SS.

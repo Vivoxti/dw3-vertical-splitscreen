@@ -1,12 +1,13 @@
 Vertical Split Screen - DYNASTY WARRIORS 3: Complete Edition Remastered
-Version 1.1.0
+Version 1.2.0
 
 ABOUT
 Local 2-player co-op/versus splits the screen top/bottom by default, which wastes
 space on wide and ultrawide monitors. This mod splits it side by side instead:
 Player 1 on the left, Player 2 on the right. Each player's HUD (health, musou,
 officer gauge, morale, minimap, K.O. counter) is moved into that player's half.
-Each player can also widen their own field of view (FOV).
+F8 switches between side-by-side and the original top/bottom split at any time.
+In side-by-side mode each player can also widen their own field of view (FOV).
 
 REQUIREMENTS
 UE4SS for DYNASTY WARRIORS 3 Complete Edition Remastered (Nexus Mods, mod #7).
@@ -20,12 +21,13 @@ INSTALL
 3. Start the game and begin a 2-player battle.
 
 USAGE
-[ / ]  - Player 1 (left) wider view -5% / +5%
-; / '  - Player 2 (right) wider view -5% / +5%
-F8     - toggle the HUD between side-by-side and the original top/bottom layout
+F8     - switch split: side by side <-> top/bottom (the HUD follows)
+[ / ]  - Player 1 wider view -5% / +5% (side-by-side mode only)
+; / '  - Player 2 wider view -5% / +5% (side-by-side mode only)
 The view widening (0..+50%) is applied on top of the game's own camera, so its
-zooms still work; cutscene cameras are left untouched. The value is shown
-briefly in that player's half and saved to ue4ss\Mods\VerticalSplit\fov.txt.
+zooms still work; cutscene cameras are left untouched. In top/bottom mode both
+players always get the game's default view. The split mode and FOV values are
+saved to ue4ss\Mods\VerticalSplit\settings.txt.
 Keys, step and range are at the top of Scripts\main.lua.
 
 UNINSTALL
@@ -43,7 +45,9 @@ RU: Вертикальный сплитскрин
 (игрок 1 слева, игрок 2 справа) и переносит HUD каждого игрока в его половину.
 
 Нужен UE4SS (мод №7 на Nexus). Распакуйте архив в DW3CE_RE\Binaries\Win64 —
-должна получиться папка ue4ss\Mods\VerticalSplit. F8 переключает раскладку HUD.
-FOV: [ и ] — игрок 1 (слева), ; и ' — игрок 2 (справа), шаг 5%, от 0 до +50%.
-Значения сохраняются в ue4ss\Mods\VerticalSplit\fov.txt.
+должна получиться папка ue4ss\Mods\VerticalSplit.
+F8 переключает сплит: слева/справа <-> сверху/снизу (HUD перестраивается сам).
+FOV (только в режиме слева/справа): [ и ] — игрок 1, ; и ' — игрок 2,
+шаг 5%, от 0 до +50%. В режиме сверху/снизу FOV всегда стандартный.
+Режим и FOV сохраняются в ue4ss\Mods\VerticalSplit\settings.txt.
 Удаление: удалить папку ue4ss\Mods\VerticalSplit.

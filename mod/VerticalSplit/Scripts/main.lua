@@ -1,24 +1,24 @@
 -- Vertical Split Screen for DYNASTY WARRIORS 3: Complete Edition Remastered
 -- Splits the 2-player screen side by side (P1 left, P2 right) and moves each player's HUD to their half.
--- Per-player FOV widening is adjusted with hotkeys and saved to fov.txt next to this mod.
--- Requires UE4SS. F8 toggles the HUD layout between side-by-side and the original top/bottom.
+-- F8 switches between side-by-side and the original top/bottom split at any time.
+-- In side-by-side mode each player can widen their view with hotkeys.
+-- Mode and FOV are saved to settings.txt next to this mod. Requires UE4SS.
 
 local MOD_NAME = "VerticalSplit"
-local VERSION = "1.1.0"
+local VERSION = "1.2.0"
 
 local Config = {
-    VerticalSplit = true,  -- side-by-side split instead of top/bottom
-    RelayoutHud = true,    -- move each player's HUD to their half of the screen
-    ToggleKey = Key.F8,    -- toggles RelayoutHud in game; set to nil to disable
+    VerticalSplit = true,  -- default mode when settings.txt doesn't exist yet
+    ToggleKey = Key.F8,    -- switches vertical/horizontal split; set to nil to disable
 
-    -- FOV widening in percent of the view size (camera overscan). Applied on top of the game's
-    -- own camera, so its zooms keep working. Widening only: 0 = the game's default view.
+    -- FOV widening in percent of the view size (camera overscan), side-by-side mode only.
+    -- Applied on top of the game's own camera, so its zooms keep working. 0 = the game's default view.
     FovStep = 5,
     FovMin = 0,
     FovMax = 50,
     FovKeys = {
-        { Down = Key.OEM_FOUR, Up = Key.OEM_SIX },   -- Player 1 (left):  [  ]
-        { Down = Key.OEM_ONE, Up = Key.OEM_SEVEN },  -- Player 2 (right): ;  '
+        { Down = Key.OEM_FOUR, Up = Key.OEM_SIX },   -- Player 1: [  ]
+        { Down = Key.OEM_ONE, Up = Key.OEM_SEVEN },  -- Player 2: ;  '
     },
     HintSeconds = 2,
 }
@@ -75,6 +75,41 @@ local ModDir = (function()
 end)()
 
 ---------------------------------------------------------------------------
+-- settings file: split mode + per-player FOV
+
+local FovOffset = { 0, 0 }
+local SettingsFile = ModDir .. "/settings.txt"
+local LegacyFovFile = ModDir .. "/fov.txt" -- v1.1.0
+
+local function LoadSettings()
+    local f = io.open(SettingsFile, "r") or io.open(LegacyFovFile, "r")
+    if not f then return end
+    for line in f:lines() do
+        local key, v = line:match("^%s*(%w+)%s*=%s*(-?%d+%.?%d*)")
+        v = tonumber(v)
+        if key == "Vertical" and v then
+            Config.VerticalSplit = v ~= 0
+        elseif key and v then
+            local i = tonumber(key:match("^P(%d)$"))
+            if i and FovOffset[i] then FovOffset[i] = math.max(Config.FovMin, math.min(Config.FovMax, v)) end
+        end
+    end
+    f:close()
+    log("settings: %s split, FOV P1 +%g%%, P2 +%g%%", Config.VerticalSplit and "vertical" or "horizontal",
+        FovOffset[1], FovOffset[2])
+end
+
+local function SaveSettings()
+    local f = io.open(SettingsFile, "w")
+    if not f then
+        log("cannot write %s", SettingsFile)
+        return
+    end
+    f:write(string.format("Vertical=%d\nP1=%g\nP2=%g\n", Config.VerticalSplit and 1 or 0, FovOffset[1], FovOffset[2]))
+    f:close()
+end
+
+---------------------------------------------------------------------------
 -- splitscreen orientation
 
 local function ApplySplitLayout()
@@ -85,6 +120,14 @@ local function ApplySplitLayout()
     end
     -- ETwoPlayerSplitScreenType: 0 = Horizontal (top/bottom), 1 = Vertical (side by side)
     settings.TwoPlayerSplitscreenLayout = Config.VerticalSplit and 1 or 0
+
+    -- the engine only reads the setting when it lays out the player viewports; toggling the
+    -- splitscreen override makes it re-layout right now (skipped if the game itself disabled splitscreen)
+    local gvc = FindFirstOf("GameViewportClient")
+    if valid(gvc) and try(function() return gvc:IsSplitscreenForceDisabled() end) == false then
+        gvc:SetForceDisableSplitscreen(true)
+        gvc:SetForceDisableSplitscreen(false)
+    end
     log("2P split: %s", Config.VerticalSplit and "vertical" or "horizontal")
 end
 
@@ -120,7 +163,7 @@ local HalfTargets = {
     BP_parts_count_1000ko_direction_down = RIGHT,
 }
 
-local Saved = {} -- slot full name -> original layout, for toggling back
+local Saved = {} -- slot full name -> original (top/bottom) layout
 
 local function saveSlot(slot)
     local key = fullName(slot)
@@ -141,7 +184,7 @@ local function setCanvasLayout(slot, l)
     slot:SetAlignment(l.Alignment)
 end
 
-local function RelayoutMultiHud(hud, enable)
+local function RelayoutMultiHud(hud, sideBySide)
     local tree = prop(hud, "WidgetTree")
     if not valid(tree) then return end
     local done = 0
@@ -150,7 +193,7 @@ local function RelayoutMultiHud(hud, enable)
         local slot = prop(w, "Slot")
         if target and valid(slot) and classOf(slot) == "CanvasPanelSlot" then
             saveSlot(slot)
-            if enable then
+            if sideBySide then
                 setCanvasLayout(slot, { Anchors = target, Offsets = { Left = 0, Top = 0, Right = 0, Bottom = 0 }, Alignment = { X = 0, Y = 0 }, AutoSize = false })
             else
                 setCanvasLayout(slot, Saved[fullName(slot)])
@@ -158,44 +201,17 @@ local function RelayoutMultiHud(hud, enable)
             done = done + 1
         end
     end)
-    log("2P HUD %s (%d widgets)", enable and "side by side" or "original", done)
+    log("2P HUD %s (%d widgets)", sideBySide and "side by side" or "original", done)
 end
 
 local function RelayoutAll()
     for _, hud in ipairs(FindAllOf("BP_2d_hud_multi_C") or {}) do
-        RelayoutMultiHud(hud, Config.RelayoutHud)
+        RelayoutMultiHud(hud, Config.VerticalSplit)
     end
 end
 
 ---------------------------------------------------------------------------
 -- per-player FOV
-
-local FovOffset = { 0, 0 }
-local FovFile = ModDir .. "/fov.txt"
-
-local function LoadFov()
-    local f = io.open(FovFile, "r")
-    if not f then return end
-    for line in f:lines() do
-        local i, v = line:match("^%s*P(%d)%s*=%s*(-?%d+%.?%d*)")
-        i, v = tonumber(i), tonumber(v)
-        if i and v and FovOffset[i] then
-            FovOffset[i] = math.max(Config.FovMin, math.min(Config.FovMax, v))
-        end
-    end
-    f:close()
-    log("FOV widening: P1 +%g%%, P2 +%g%%", FovOffset[1], FovOffset[2])
-end
-
-local function SaveFov()
-    local f = io.open(FovFile, "w")
-    if not f then
-        log("cannot write %s", FovFile)
-        return
-    end
-    f:write(string.format("P1=%g\nP2=%g\n", FovOffset[1], FovOffset[2]))
-    f:close()
-end
 
 local GameEngine
 local function localPlayerCameras()
@@ -253,17 +269,24 @@ local function cameraFor(i, pcm)
     return valid(cam) and e or nil
 end
 
+local function wantedFov(i)
+    return Config.VerticalSplit and (FovOffset[i] or 0) or 0
+end
+
+local function overscanApplied(i)
+    return Cams[i] and Cams[i].applied and Cams[i].applied ~= 0
+end
+
 local Frame = 0
 local function ApplyFov()
     Frame = Frame + 1
-    if FovOffset[1] == 0 and FovOffset[2] == 0 and not (Cams[1] and Cams[1].applied)
-        and not (Cams[2] and Cams[2].applied) then
+    if wantedFov(1) == 0 and wantedFov(2) == 0 and not overscanApplied(1) and not overscanApplied(2) then
         return
     end
     for i, pcm in pairs(localPlayerCameras()) do
         local e = cameraFor(i, pcm)
         if e then
-            local want = (FovOffset[i] or 0) / 100
+            local want = wantedFov(i) / 100
             -- write only when the wanted value changes; re-check once a second in case something resets it
             if e.applied ~= want or Frame % 60 == 0 then
                 if prop(e.cam, "Overscan") ~= want then
@@ -272,7 +295,7 @@ local function ApplyFov()
                     try(function() e.cam.bScaleResolutionWithOverscan = false end)
                 end
                 if e.applied ~= want then
-                    log("P%d FOV +%g%% (%s)", i, FovOffset[i], fullName(e.cam))
+                    log("P%d FOV +%g%% (%s)", i, wantedFov(i), fullName(e.cam))
                 end
                 e.applied = want
             end
@@ -281,9 +304,9 @@ local function ApplyFov()
 end
 
 ---------------------------------------------------------------------------
--- on-screen hint inside the 2P HUD (one text per half)
+-- on-screen hint inside the 2P HUD (one text per player, placed in that player's view)
 
-local Hints = {}    -- player index -> {hud, text}
+local Hints = {}    -- player index -> { hud, text, slot }
 local HintGen = { 0, 0 }
 local VIS_COLLAPSED, VIS_HIT_TEST_INVISIBLE = 1, 3
 
@@ -295,31 +318,39 @@ local function findHudFont(hud)
     return font
 end
 
+local function hintAnchor(i)
+    if Config.VerticalSplit then
+        return (i == 1) and 0.25 or 0.75, 0.08 -- top center of the left/right half
+    end
+    return 0.5, (i == 1) and 0.06 or 0.56     -- top center of the upper/lower half
+end
+
 local function hintText(i)
     local hud = FindFirstOf("BP_2d_hud_multi_C")
     if not valid(hud) then return nil end
     local h = Hints[i]
-    if h and h.hud == fullName(hud) and valid(h.text) then return h.text end
-
-    local tree = prop(hud, "WidgetTree")
-    local root = valid(tree) and prop(tree, "RootWidget")
-    if not valid(root) or not isA(root, "/Script/UMG.CanvasPanel") then return nil end
-    local text = StaticConstructObject(StaticFindObject("/Script/UMG.TextBlock"), tree)
-    if not valid(text) then return nil end
-    local font = findHudFont(hud)
-    if font then try(function() text:SetFont(font) end) end
-    try(function() text:SetShadowOffset({ X = 2, Y = 2 }) end)
-    try(function() text:SetShadowColorAndOpacity({ R = 0, G = 0, B = 0, A = 0.85 }) end)
-    local slot = root:AddChildToCanvas(text)
-    local x = (i == 1) and 0.25 or 0.75 -- center of the player's half
-    slot:SetAnchors({ Minimum = { X = x, Y = 0.08 }, Maximum = { X = x, Y = 0.08 } })
-    slot:SetAlignment({ X = 0.5, Y = 0.5 })
-    slot:SetOffsets({ Left = 0, Top = 0, Right = 0, Bottom = 0 })
-    slot:SetAutoSize(true)
-    slot:SetZOrder(100)
-    text:SetVisibility(VIS_COLLAPSED)
-    Hints[i] = { hud = fullName(hud), text = text }
-    return text
+    if not (h and h.hud == fullName(hud) and valid(h.text)) then
+        local tree = prop(hud, "WidgetTree")
+        local root = valid(tree) and prop(tree, "RootWidget")
+        if not valid(root) or not isA(root, "/Script/UMG.CanvasPanel") then return nil end
+        local text = StaticConstructObject(StaticFindObject("/Script/UMG.TextBlock"), tree)
+        if not valid(text) then return nil end
+        local font = findHudFont(hud)
+        if font then try(function() text:SetFont(font) end) end
+        try(function() text:SetShadowOffset({ X = 2, Y = 2 }) end)
+        try(function() text:SetShadowColorAndOpacity({ R = 0, G = 0, B = 0, A = 0.85 }) end)
+        local slot = root:AddChildToCanvas(text)
+        slot:SetAlignment({ X = 0.5, Y = 0.5 })
+        slot:SetOffsets({ Left = 0, Top = 0, Right = 0, Bottom = 0 })
+        slot:SetAutoSize(true)
+        slot:SetZOrder(100)
+        text:SetVisibility(VIS_COLLAPSED)
+        h = { hud = fullName(hud), text = text, slot = slot }
+        Hints[i] = h
+    end
+    local x, y = hintAnchor(i)
+    h.slot:SetAnchors({ Minimum = { X = x, Y = y }, Maximum = { X = x, Y = y } })
+    return h.text
 end
 
 local function ShowHint(i, msg)
@@ -335,16 +366,28 @@ local function ShowHint(i, msg)
 end
 
 local function ChangeFov(i, delta)
+    if not Config.VerticalSplit then
+        ShowHint(i, "FOV: side-by-side split only (F8)")
+        return
+    end
     FovOffset[i] = math.max(Config.FovMin, math.min(Config.FovMax, FovOffset[i] + delta))
-    SaveFov()
+    SaveSettings()
     ShowHint(i, string.format("FOV P%d: +%g%%", i, FovOffset[i]))
+end
+
+local function ToggleSplit()
+    Config.VerticalSplit = not Config.VerticalSplit
+    SaveSettings()
+    ApplySplitLayout()
+    RelayoutAll()
+    -- FOV follows automatically: ApplyFov drops the widening in horizontal mode
 end
 
 ---------------------------------------------------------------------------
 -- hooks
 
 NotifyOnNewObject("/Script/UMG.UserWidget", function(obj)
-    if Config.RelayoutHud and classOf(obj) == "BP_2d_hud_multi_C" then
+    if Config.VerticalSplit and classOf(obj) == "BP_2d_hud_multi_C" then
         delayed(500, function()
             if valid(obj) then RelayoutMultiHud(obj, true) end
         end)
@@ -355,7 +398,7 @@ end)
 -- re-apply after every map load in case the game resets its slots.
 local RestartPending = false
 RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
-    if RestartPending or not Config.RelayoutHud then return end
+    if RestartPending or not Config.VerticalSplit then return end
     RestartPending = true
     delayed(1500, function()
         RestartPending = false
@@ -364,12 +407,12 @@ RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
 end)
 
 if Config.ToggleKey then
-    RegisterKeyBind(Config.ToggleKey, function()
-        inGameThread(function()
-            Config.RelayoutHud = not Config.RelayoutHud
-            RelayoutAll()
-        end)
-    end)
+    RegisterKeyBind(Config.ToggleKey, function() inGameThread(ToggleSplit) end)
+end
+
+for i, keys in ipairs(Config.FovKeys) do
+    RegisterKeyBind(keys.Down, function() inGameThread(function() ChangeFov(i, -Config.FovStep) end) end)
+    RegisterKeyBind(keys.Up, function() inGameThread(function() ChangeFov(i, Config.FovStep) end) end)
 end
 
 local FovErrorLogged = false
@@ -382,11 +425,6 @@ LoopInGameThreadAfterFrames(1, function()
     return false
 end)
 
-for i, keys in ipairs(Config.FovKeys) do
-    RegisterKeyBind(keys.Down, function() inGameThread(function() ChangeFov(i, -Config.FovStep) end) end)
-    RegisterKeyBind(keys.Up, function() inGameThread(function() ChangeFov(i, Config.FovStep) end) end)
-end
-
-LoadFov()
+LoadSettings()
 inGameThread(ApplySplitLayout)
 log("v%s loaded", VERSION)

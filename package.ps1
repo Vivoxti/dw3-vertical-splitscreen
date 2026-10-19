@@ -11,6 +11,7 @@ $files = [ordered]@{
     "ue4ss/Mods/VerticalSplit/Scripts/main.lua" = $main
     "ue4ss/Mods/VerticalSplit/enabled.txt"      = Join-Path $root "mod\VerticalSplit\enabled.txt"
     "README-VerticalSplit.txt"                  = Join-Path $root "README.txt"
+    "LICENSE-VerticalSplit.txt"                 = Join-Path $root "LICENSE"
 }
 
 $dist = Join-Path $root "dist"
