@@ -1,6 +1,12 @@
 # Vertical Split Screen — DYNASTY WARRIORS 3: Complete Edition Remastered
 
+![Side-by-side 2-player split screen on a 21:9 monitor](docs/images/hero.jpg)
+
 A [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) Lua mod that makes the local 2-player split screen split **side by side** (Player 1 left, Player 2 right) instead of top/bottom, which works much better on wide and ultrawide monitors.
+
+## Before / after
+
+![Original top/bottom split compared with the side-by-side split](docs/images/compare-split.jpg)
 
 ## Features
 
@@ -10,6 +16,10 @@ A [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) Lua mod that makes the local 2-p
 - **Per-player wider view** (side-by-side mode only): each player can widen their FOV by 0–50% with their own hotkeys. It works on top of the game's camera, so zooms during musou attacks keep working. Cutscenes are untouched.
 - The split mode and FOV values are remembered between sessions.
 - No game files are modified.
+
+### Wider view per player
+
+![Player 1's view at FOV +0% and at FOV +50%](docs/images/compare-fov.jpg)
 
 ## Requirements
 
