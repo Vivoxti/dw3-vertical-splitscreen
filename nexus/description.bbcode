@@ -1,43 +1,45 @@
-[size=5][b]Vertical Split Screen[/b][/size]
+[size=4][b]Description[/b][/size]
+Local 2-player co-op and versus split the screen [b]top/bottom[/b], which leaves each player a thin, very wide strip on wide and ultrawide monitors. This mod splits it [b]side by side[/b] instead: Player 1 on the left, Player 2 on the right. Each player's HUD is moved into their own half.
 
-Local 2-player co-op and versus split the screen [b]top/bottom[/b], which leaves each player a thin strip on wide and ultrawide monitors. This mod splits it [b]side by side[/b] instead: Player 1 on the left, Player 2 on the right.
+[size=4][b]Installation instructions[/b][/size]
+[list=1]
+[*]Install [url=https://www.nexusmods.com/dynastywarriors3completeeditionremastered/mods/7]UE4SS[/url] first: [i]dwmapi.dll[/i] and the [i]ue4ss[/i] folder go next to [i]DW3CE_RE\Binaries\Win64\DW3CE_RE-Win64-Shipping.exe[/i].
+[*]Extract this archive into [i]DW3CE_RE\Binaries\Win64[/i]. You should end up with:
+[i]ue4ss\Mods\VerticalSplit\Scripts\main.lua[/i]
+[i]ue4ss\Mods\VerticalSplit\enabled.txt[/i]
+[*]Start a 2-player battle. The split is side by side straight away.
+[/list]
+[b]Uninstall:[/b] delete the [i]ue4ss\Mods\VerticalSplit[/i] folder.
 
-[size=4][b]Features[/b][/size]
+[size=4][b]Main features[/b][/size]
 [list]
 [*][b]Side-by-side split[/b] for local co-op and versus.
 [*][b]HUD follows the split[/b]: each player's health, musou, officer gauge, morale, minimap and K.O. counter are moved into that player's half.
 [*][b]F8 switches[/b] between side-by-side and the original top/bottom split at any time, even mid-battle. The HUD follows.
-[*][b]Per-player wider view[/b] (side-by-side mode only): each player can widen their FOV by 0-50% with their own hotkeys. It works on top of the game's camera, so musou zooms keep working. Cutscenes are untouched.
+[*][b]Per-player wider view[/b] (side-by-side mode only): each player can widen their FOV by 0-50%. It works on top of the game's camera, so musou zooms keep working. Cutscenes are untouched. In top/bottom mode both players always use the default FOV.
 [*]Split mode and FOV values are remembered between sessions.
 [*]No game files are modified.
 [/list]
-
-[size=4][b]Controls[/b][/size]
+[b]Controls[/b]
 [list]
 [*][b]F8[/b] - switch split: side by side / top-bottom
 [*][b][ / ][/b] - Player 1 view -5% / +5%
 [*][b]; / '[/b] - Player 2 view -5% / +5%
 [/list]
-In top/bottom mode both players always use the game's default FOV.
 Settings are saved to [i]ue4ss\Mods\VerticalSplit\settings.txt[/i]. Keys, step and range can be changed at the top of [i]Scripts\main.lua[/i].
 
 [size=4][b]Requirements[/b][/size]
 [list]
 [*][url=https://www.nexusmods.com/dynastywarriors3completeeditionremastered/mods/7]UE4SS for Dynasty Warriors 3 Complete Edition Remastered[/url]
 [/list]
+Tested on Steam build 25630985 with UE4SS v3.0.1-1152 (experimental) on a 21:9 monitor. Should work with other UE4SS Lua mods. If a game update breaks it, please post your game build and attach [i]ue4ss\UE4SS.log[/i].
+Source code (MIT): [url=https://github.com/Vivoxti/dw3-vertical-splitscreen]github.com/Vivoxti/dw3-vertical-splitscreen[/url]
 
-[size=4][b]Installation[/b][/size]
-[list=1]
-[*]Install UE4SS first ([i]dwmapi.dll[/i] and the [i]ue4ss[/i] folder next to [i]DW3CE_RE\Binaries\Win64\DW3CE_RE-Win64-Shipping.exe[/i]).
-[*]Extract this archive into [i]DW3CE_RE\Binaries\Win64[/i]. You should end up with [i]ue4ss\Mods\VerticalSplit\Scripts\main.lua[/i] and [i]ue4ss\Mods\VerticalSplit\enabled.txt[/i].
-[*]Start a 2-player battle.
+[size=4][b]Shout outs[/b][/size]
+[list]
+[*][b]FistOfTheNoob[/b] for packaging and testing UE4SS for this game.
+[*]The [url=https://github.com/UE4SS-RE/RE-UE4SS]UE4SS-RE team[/url] for the framework that makes this mod possible.
+[*]Koei Tecmo and Omega Force for bringing Dynasty Warriors 3 back with local split-screen co-op.
 [/list]
-[b]Uninstall:[/b] delete the [i]ue4ss\Mods\VerticalSplit[/i] folder.
-
-[size=4][b]Compatibility[/b][/size]
-Tested on Steam build 25630985 with UE4SS v3.0.1-1152 (experimental). Should work with other UE4SS Lua mods. If a game update breaks it, please report your game build and attach [i]ue4ss\UE4SS.log[/i].
-
-[size=4][b]Source[/b][/size]
-Source code and issue tracker: [url=https://github.com/Vivoxti/dw3-vertical-splitscreen]github.com/Vivoxti/dw3-vertical-splitscreen[/url] (MIT license).
 
 [i]Fan-made mod, not affiliated with or endorsed by Koei Tecmo.[/i]

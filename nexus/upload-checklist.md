@@ -10,7 +10,7 @@
 | Category | Gameplay (или User Interface, если есть) |
 | Author | Vivoxti |
 | Brief overview | текст из `summary.txt` |
-| Detailed description | содержимое `description.bbcode` (вставлять в BBCode-режиме) |
+| Detailed description | содержимое `description.bbcode` по разделам шаблона Nexus (Description / Installation instructions / Main features / Requirements / Shout outs), вставлять в BBCode-режиме |
 | Requirements → Nexus mods | UE4SS for Dynasty Warriors 3 Complete Edition Remastered (mod #7) |
 | Permissions | по желанию; исходники и так открыты на GitHub под MIT |
 
@@ -18,7 +18,7 @@
 - Main file: `dist/VerticalSplit-1.2.0.zip`, version 1.2.0. Пересобрать: `.\package.ps1`.
 - Внутри архива пути от `Binaries\Win64` (`ue4ss/Mods/VerticalSplit/...`): так ставят и вручную, и через Vortex.
 
-## Скриншоты (нужно снять заново, старые — с горизонтальным HUD)
+## Скриншоты (готовые лежат в docs/images: hero, compare-split, compare-fov)
 1. Главный: бой на двоих, вертикальный сплит, оба HUD на своих половинах.
 2. Тот же момент в горизонтальном режиме (после F8) — для сравнения.
 3. Подсказка «FOV P1: +15%» и разница обзора между половинами.
