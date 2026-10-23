@@ -6,7 +6,7 @@
 | Поле | Значение |
 |---|---|
 | Mod name | Vertical Split Screen |
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Category | Gameplay (или User Interface, если есть) |
 | Author | Vivoxti |
 | Brief overview | текст из `summary.txt` |
@@ -15,7 +15,7 @@
 | Permissions | по желанию; исходники и так открыты на GitHub под MIT |
 
 ## Файл
-- Main file: `dist/VerticalSplit-1.2.0.zip`, version 1.2.0. Пересобрать: `.\package.ps1`.
+- Main file: `dist/VerticalSplit-1.3.0.zip`, version 1.3.0. Пересобрать: `.\package.ps1`.
 - Внутри архива пути от `Binaries\Win64` (`ue4ss/Mods/VerticalSplit/...`): так ставят и вручную, и через Vortex.
 
 ## Скриншоты (готовые лежат в docs/images: hero, compare-split, compare-fov)

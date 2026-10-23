@@ -15,18 +15,27 @@ Local 2-player co-op and versus split the screen [b]top/bottom[/b], which leaves
 [list]
 [*][b]Side-by-side split[/b] for local co-op and versus.
 [*][b]HUD follows the split[/b]: each player's health, musou, officer gauge, morale, minimap and K.O. counter are moved into that player's half.
-[*][b]F8 switches[/b] between side-by-side and the original top/bottom split at any time, even mid-battle. The HUD follows.
+[*][b]Switch the split[/b] between side-by-side and the original top/bottom at any time, even mid-battle. The HUD follows.
 [*][b]Per-player wider view[/b] (side-by-side mode only): each player can widen their FOV by 0-50%. It works on top of the game's camera, so musou zooms keep working. Cutscenes are untouched. In top/bottom mode both players always use the default FOV.
-[*]Split mode and FOV values are remembered between sessions.
+[*][b]Per-player HUD scale[/b] (50-200%) for the own HP gauge, the strong enemy's gauge and the minimap block, in both split modes.
+[*][b]In-game settings menu[/b] on three keys, shown in the player's half of the screen.
+[*]All settings are remembered between sessions.
 [*]No game files are modified.
 [/list]
 [b]Controls[/b]
 [list]
-[*][b]F8[/b] - switch split: side by side / top-bottom
-[*][b][ / ][/b] - Player 1 view -5% / +5%
-[*][b]; / '[/b] - Player 2 view -5% / +5%
+[*][b]F8[/b] - next setting (its name and value are shown on screen)
+[*][b][ / ][/b] - change the selected setting down / up
 [/list]
-Settings are saved to [i]ue4ss\Mods\VerticalSplit\settings.txt[/i]. Keys, step and range can be changed at the top of [i]Scripts\main.lua[/i].
+[b]Settings, in F8 order[/b]
+[list]
+[*][b]Split[/b] - side by side / top-bottom
+[*][b]FOV P1 / P2[/b] - wider view +0-50% (side-by-side mode only)
+[*][b]HP gauge P1 / P2[/b] - own HP gauge scale 50-200%
+[*][b]Enemy gauge P1 / P2[/b] - strong enemy's gauge scale 50-200%
+[*][b]Minimap P1 / P2[/b] - minimap block (with the morale bar) scale 50-200%
+[/list]
+Settings are saved to [i]ue4ss\Mods\VerticalSplit\settings.txt[/i]. Keys, steps and ranges can be changed at the top of [i]Scripts\main.lua[/i].
 
 [size=4][b]Requirements[/b][/size]
 [list]

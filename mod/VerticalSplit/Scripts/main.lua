@@ -1,26 +1,33 @@
 -- Vertical Split Screen for DYNASTY WARRIORS 3: Complete Edition Remastered
 -- Splits the 2-player screen side by side (P1 left, P2 right) and moves each player's HUD to their half.
--- F8 switches between side-by-side and the original top/bottom split at any time.
--- In side-by-side mode each player can widen their view with hotkeys.
--- Mode and FOV are saved to settings.txt next to this mod. Requires UE4SS.
+-- Settings are changed in game: F8 picks the setting (shown on screen), [ and ] change it.
+-- Settings: split side by side / top-bottom, and per player: wider view (side-by-side mode only),
+-- own HP gauge, strong enemy's gauge and minimap block scale.
+-- They are saved to settings.txt next to this mod. Requires UE4SS.
 
 local MOD_NAME = "VerticalSplit"
-local VERSION = "1.2.0"
+local VERSION = "1.3.0"
 
 local Config = {
     VerticalSplit = true,  -- default mode when settings.txt doesn't exist yet
-    ToggleKey = Key.F8,    -- switches vertical/horizontal split; set to nil to disable
+
+    -- Controls: SelectKey moves to the next setting and shows it, Down/Up change it.
+    SelectKey = Key.F8,
+    DownKey = Key.OEM_FOUR, -- [
+    UpKey = Key.OEM_SIX,    -- ]
 
     -- FOV widening in percent of the view size (camera overscan), side-by-side mode only.
     -- Applied on top of the game's own camera, so its zooms keep working. 0 = the game's default view.
     FovStep = 5,
     FovMin = 0,
     FovMax = 50,
-    FovKeys = {
-        { Down = Key.OEM_FOUR, Up = Key.OEM_SIX },   -- Player 1: [  ]
-        { Down = Key.OEM_ONE, Up = Key.OEM_SEVEN },  -- Player 2: ;  '
-    },
-    HintSeconds = 2,
+
+    -- HUD scale in percent, per player, both split modes: own HP gauge, strong enemy's gauge, minimap block.
+    GaugeScaleStep = 10,
+    GaugeScaleMin = 50,
+    GaugeScaleMax = 200,
+
+    HintSeconds = 3,
 }
 
 ---------------------------------------------------------------------------
@@ -58,15 +65,21 @@ local function isA(o, path)
     return valid(c) and try(function() return o:IsA(c) end) == true
 end
 
-local function inGameThread(fn)
-    ExecuteInGameThread(function()
+local function guarded(fn)
+    return function()
         local ok, err = pcall(fn)
         if not ok then log("error: %s", tostring(err)) end
-    end)
+    end
 end
 
+local function inGameThread(fn)
+    ExecuteInGameThread(guarded(fn))
+end
+
+-- Runs fn on the game thread after ms. Not ExecuteWithDelay: that calls back into Lua from its own
+-- thread while the game thread runs our per-frame loop, which can corrupt the Lua state and crash.
 local function delayed(ms, fn)
-    ExecuteWithDelay(ms, function() inGameThread(fn) end)
+    ExecuteInGameThreadWithDelay(ms, guarded(fn))
 end
 
 local ModDir = (function()
@@ -75,9 +88,12 @@ local ModDir = (function()
 end)()
 
 ---------------------------------------------------------------------------
--- settings file: split mode + per-player FOV
+-- settings file: split mode + per-player FOV and gauge scale
 
 local FovOffset = { 0, 0 }
+local GaugeOrder = { "Hp", "Enemy", "Map" }
+local GaugeLabel = { Hp = "HP gauge", Enemy = "Enemy gauge", Map = "Minimap" }
+local GaugeScale = { Hp = { 100, 100 }, Enemy = { 100, 100 }, Map = { 100, 100 } }
 local SettingsFile = ModDir .. "/settings.txt"
 local LegacyFovFile = ModDir .. "/fov.txt" -- v1.1.0
 
@@ -92,11 +108,16 @@ local function LoadSettings()
         elseif key and v then
             local i = tonumber(key:match("^P(%d)$"))
             if i and FovOffset[i] then FovOffset[i] = math.max(Config.FovMin, math.min(Config.FovMax, v)) end
+            local kind, p = key:match("^(%a+)ScaleP(%d)$")
+            local scale = GaugeScale[kind]
+            p = tonumber(p)
+            if scale and scale[p] then scale[p] = math.max(Config.GaugeScaleMin, math.min(Config.GaugeScaleMax, v)) end
         end
     end
     f:close()
-    log("settings: %s split, FOV P1 +%g%%, P2 +%g%%", Config.VerticalSplit and "vertical" or "horizontal",
-        FovOffset[1], FovOffset[2])
+    log("settings: %s split, FOV P1 +%g%%, P2 +%g%%, HP gauge P1 %g%%, P2 %g%%, enemy gauge P1 %g%%, P2 %g%%, "
+        .. "minimap P1 %g%%, P2 %g%%", Config.VerticalSplit and "vertical" or "horizontal", FovOffset[1], FovOffset[2],
+        GaugeScale.Hp[1], GaugeScale.Hp[2], GaugeScale.Enemy[1], GaugeScale.Enemy[2], GaugeScale.Map[1], GaugeScale.Map[2])
 end
 
 local function SaveSettings()
@@ -106,6 +127,9 @@ local function SaveSettings()
         return
     end
     f:write(string.format("Vertical=%d\nP1=%g\nP2=%g\n", Config.VerticalSplit and 1 or 0, FovOffset[1], FovOffset[2]))
+    for _, kind in ipairs(GaugeOrder) do
+        for i, s in ipairs(GaugeScale[kind]) do f:write(string.format("%sScaleP%d=%g\n", kind, i, s)) end
+    end
     f:close()
 end
 
@@ -134,19 +158,22 @@ end
 ---------------------------------------------------------------------------
 -- HUD relayout
 
--- visit(widget) for every widget below root, descending into child UserWidgets
-local function walk(w, visit)
+-- visit(widget, ctx) for every widget below root, descending into child UserWidgets;
+-- visit returns false to skip the widget's children, or a new ctx for them
+local function walk(w, visit, ctx)
     if not valid(w) then return end
-    visit(w)
+    local r = visit(w, ctx)
+    if r == false then return end
+    ctx = r or ctx
     if isA(w, "/Script/UMG.UserWidget") then
         local tree = prop(w, "WidgetTree")
-        if valid(tree) then walk(prop(tree, "RootWidget"), visit) end
+        if valid(tree) then walk(prop(tree, "RootWidget"), visit, ctx) end
     elseif isA(w, "/Script/UMG.PanelWidget") then
         local slots = prop(w, "Slots")
         if slots then
             slots:ForEach(function(_, e)
                 local s = e:get()
-                if valid(s) then walk(prop(s, "Content"), visit) end
+                if valid(s) then walk(prop(s, "Content"), visit, ctx) end
             end)
         end
     end
@@ -209,6 +236,109 @@ local function RelayoutAll()
         RelayoutMultiHud(hud, Config.VerticalSplit)
     end
 end
+
+---------------------------------------------------------------------------
+-- per-player gauge scale (own HP gauge, strong enemy's gauge, minimap block)
+
+local PartPlayer = { BP_parts_2d_hud_split_screen_up = 1, BP_parts_2d_hud_split_screen_down = 2 }
+
+-- gauge widget class -> setting it follows + pivot (the corner it grows from)
+local TOP_LEFT, BOTTOM_LEFT = { X = 0, Y = 0 }, { X = 0, Y = 1 }
+local TOP_RIGHT, BOTTOM_RIGHT = { X = 1, Y = 0 }, { X = 1, Y = 1 }
+local GaugeClasses = {
+    bp_parts_gauge_pc_multi_C = { kind = "Hp", pivot = BOTTOM_LEFT },
+    bp_parts_gauge_pc_C = { kind = "Hp", pivot = BOTTOM_LEFT },
+    BP_parts_gauge_enemy_multi_C = { kind = "Enemy", pivot = TOP_LEFT },
+    BP_parts_gauge_enemy_C = { kind = "Enemy", pivot = TOP_LEFT },
+    BP_parts_minimap_C = { kind = "Map", pivot = TOP_RIGHT },
+    -- morale bar right above the minimap: grows up from the same edge, so the two stay together
+    BP_parts_gauge_moral_C = { kind = "Map", pivot = BOTTOM_RIGHT },
+}
+local Gauges = {} -- { w = gauge widget, kind, pivot, i = player index }
+
+-- list of { w, kind, pivot, i }; gauges nested inside another gauge are left to their parent
+local function findGauges(hud)
+    local found, loose = {}, {} -- class -> player index -> widget / class -> widgets outside the player parts
+    walk(prop(prop(hud, "WidgetTree"), "RootWidget"), function(w, player)
+        local p = PartPlayer[nameOf(w)]
+        if p then return p end
+        local cls = classOf(w)
+        if not GaugeClasses[cls] then return end
+        if player then
+            found[cls] = found[cls] or {}
+            found[cls][player] = found[cls][player] or w
+        else
+            loose[cls] = loose[cls] or {}
+            table.insert(loose[cls], w)
+        end
+        return false -- don't look inside a gauge
+    end)
+    local list = {}
+    for cls, info in pairs(GaugeClasses) do
+        for i, w in pairs(found[cls] or loose[cls] or {}) do -- fallback: tree order = player order
+            list[#list + 1] = { w = w, kind = info.kind, pivot = info.pivot, i = i }
+        end
+    end
+    return list
+end
+
+local function setGaugeScale(g)
+    local s = GaugeScale[g.kind][g.i] / 100
+    g.w:SetRenderTransformPivot(g.pivot)
+    g.w:SetRenderScale({ X = s, Y = s })
+end
+
+local function ApplyGaugeScaleAll(quiet)
+    local before = #Gauges
+    Gauges = {}
+    for _, hud in ipairs(FindAllOf("BP_2d_hud_multi_C") or {}) do
+        for _, g in ipairs(findGauges(hud)) do
+            if GaugeScale[g.kind][g.i] then
+                setGaugeScale(g)
+                Gauges[#Gauges + 1] = g
+            end
+        end
+    end
+    if not quiet or #Gauges ~= before then
+        log("HP gauge P1 %g%%, P2 %g%%, enemy gauge P1 %g%%, P2 %g%%, minimap P1 %g%%, P2 %g%% (%d widgets)",
+            GaugeScale.Hp[1], GaugeScale.Hp[2], GaugeScale.Enemy[1], GaugeScale.Enemy[2],
+            GaugeScale.Map[1], GaugeScale.Map[2], #Gauges)
+    end
+end
+
+-- After a setting change: rescale the gauges found earlier, search the HUD again only if one is gone.
+local function RescaleGauges()
+    local missing = #Gauges == 0
+    for _, g in ipairs(Gauges) do
+        if valid(g.w) then setGaugeScale(g) else missing = true end
+    end
+    if missing then ApplyGaugeScaleAll() end
+end
+
+-- Once a second: put the scale back if the game reset a gauge's render transform.
+-- Every 5 s: look for gauges again if a scaled one is missing (e.g. the HUD was rebuilt).
+local KeepTick = 0
+local function KeepGaugeScale()
+    KeepTick = KeepTick + 1
+    local have = {}
+    for _, g in ipairs(Gauges) do
+        if valid(g.w) then
+            have[g.kind .. g.i] = true
+            local x = try(function() return g.w.RenderTransform.Scale.X end)
+            if x and math.abs(x - GaugeScale[g.kind][g.i] / 100) > 0.001 then setGaugeScale(g) end
+        end
+    end
+    if KeepTick % 5 ~= 0 then return end
+    for kind, scale in pairs(GaugeScale) do
+        for i, s in ipairs(scale) do
+            if s ~= 100 and not have[kind .. i] then
+                ApplyGaugeScaleAll(true)
+                return
+            end
+        end
+    end
+end
+
 
 ---------------------------------------------------------------------------
 -- per-player FOV
@@ -365,15 +495,8 @@ local function ShowHint(i, msg)
     end)
 end
 
-local function ChangeFov(i, delta)
-    if not Config.VerticalSplit then
-        ShowHint(i, "FOV: side-by-side split only (F8)")
-        return
-    end
-    FovOffset[i] = math.max(Config.FovMin, math.min(Config.FovMax, FovOffset[i] + delta))
-    SaveSettings()
-    ShowHint(i, string.format("FOV P%d: +%g%%", i, FovOffset[i]))
-end
+---------------------------------------------------------------------------
+-- settings menu: F8 picks a setting, [ / ] change it
 
 local function ToggleSplit()
     Config.VerticalSplit = not Config.VerticalSplit
@@ -383,13 +506,80 @@ local function ToggleSplit()
     -- FOV follows automatically: ApplyFov drops the widening in horizontal mode
 end
 
+local function ChangeFov(i, dir)
+    FovOffset[i] = math.max(Config.FovMin, math.min(Config.FovMax, FovOffset[i] + dir * Config.FovStep))
+    SaveSettings()
+end
+
+local function ChangeGaugeScale(kind, i, dir)
+    local scale = GaugeScale[kind]
+    scale[i] = math.max(Config.GaugeScaleMin, math.min(Config.GaugeScaleMax, scale[i] + dir * Config.GaugeScaleStep))
+    SaveSettings()
+    RescaleGauges()
+end
+
+-- player = whose half shows the hint (nil = both); sideBySideOnly = skipped in top/bottom mode
+local Settings = {
+    {
+        label = "Split",
+        value = function() return Config.VerticalSplit and "side by side" or "top / bottom" end,
+        change = function() ToggleSplit() end,
+    },
+}
+for i = 1, 2 do
+    table.insert(Settings, {
+        player = i, sideBySideOnly = true, label = string.format("FOV P%d", i),
+        value = function() return string.format("+%g%%", FovOffset[i]) end,
+        change = function(dir) ChangeFov(i, dir) end,
+    })
+    for _, kind in ipairs(GaugeOrder) do
+        table.insert(Settings, {
+            player = i, label = string.format("%s P%d", GaugeLabel[kind], i),
+            value = function() return string.format("%g%%", GaugeScale[kind][i]) end,
+            change = function(dir) ChangeGaugeScale(kind, i, dir) end,
+        })
+    end
+end
+
+local Selected = 1
+
+local function available(s)
+    return not (s.sideBySideOnly and not Config.VerticalSplit)
+end
+
+local function ShowSetting()
+    local s = Settings[Selected]
+    local msg = string.format("%s: %s    [ / ] change, F8 next", s.label, s.value())
+    if s.player then
+        ShowHint(s.player, msg)
+    else
+        ShowHint(1, msg)
+        ShowHint(2, msg)
+    end
+end
+
+local function SelectNext()
+    repeat
+        Selected = Selected % #Settings + 1
+    until available(Settings[Selected])
+    ShowSetting()
+end
+
+local function ChangeSelected(dir)
+    if not available(Settings[Selected]) then Selected = 1 end
+    Settings[Selected].change(dir)
+    ShowSetting()
+end
+
 ---------------------------------------------------------------------------
 -- hooks
 
 NotifyOnNewObject("/Script/UMG.UserWidget", function(obj)
-    if Config.VerticalSplit and classOf(obj) == "BP_2d_hud_multi_C" then
+    if classOf(obj) == "BP_2d_hud_multi_C" then
         delayed(500, function()
-            if valid(obj) then RelayoutMultiHud(obj, true) end
+            if not valid(obj) then return end
+            if Config.VerticalSplit then RelayoutMultiHud(obj, true) end
+            ApplyGaugeScaleAll()
         end)
     end
 end)
@@ -398,29 +588,32 @@ end)
 -- re-apply after every map load in case the game resets its slots.
 local RestartPending = false
 RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
-    if RestartPending or not Config.VerticalSplit then return end
+    if RestartPending then return end
     RestartPending = true
     delayed(1500, function()
         RestartPending = false
-        RelayoutAll()
+        if Config.VerticalSplit then RelayoutAll() end
+        ApplyGaugeScaleAll()
     end)
 end)
 
-if Config.ToggleKey then
-    RegisterKeyBind(Config.ToggleKey, function() inGameThread(ToggleSplit) end)
-end
+RegisterKeyBind(Config.SelectKey, function() inGameThread(SelectNext) end)
+RegisterKeyBind(Config.DownKey, function() inGameThread(function() ChangeSelected(-1) end) end)
+RegisterKeyBind(Config.UpKey, function() inGameThread(function() ChangeSelected(1) end) end)
 
-for i, keys in ipairs(Config.FovKeys) do
-    RegisterKeyBind(keys.Down, function() inGameThread(function() ChangeFov(i, -Config.FovStep) end) end)
-    RegisterKeyBind(keys.Up, function() inGameThread(function() ChangeFov(i, Config.FovStep) end) end)
-end
-
-local FovErrorLogged = false
+local FovErrorLogged, GaugeErrorLogged = false, false
 LoopInGameThreadAfterFrames(1, function()
     local ok, err = pcall(ApplyFov)
     if not ok and not FovErrorLogged then
         FovErrorLogged = true
         log("FOV error: %s", tostring(err))
+    end
+    if Frame % 60 == 30 then
+        ok, err = pcall(KeepGaugeScale)
+        if not ok and not GaugeErrorLogged then
+            GaugeErrorLogged = true
+            log("gauge scale error: %s", tostring(err))
+        end
     end
     return false
 end)
