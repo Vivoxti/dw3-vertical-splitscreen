@@ -1,1 +1,1 @@
-Side-by-side 2-player split screen instead of top/bottom: great for wide and ultrawide monitors. Each player's HUD moves to their half; an in-game F8 menu switches the split, widens each player's FOV and scales their HP gauge, enemy gauge and minimap. Requires UE4SS.
+Side-by-side 2-player split screen instead of top/bottom: great for wide and ultrawide monitors. Each player's HUD moves to their half; an in-game F8 menu switches the split, widens each player's FOV, scales their HP gauge, enemy gauge and minimap, and shrinks overhead HP bars. Requires UE4SS.

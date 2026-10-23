@@ -15,6 +15,7 @@ A [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) Lua mod that makes the local 2-p
 - **Switch the split** between side-by-side and the original top/bottom at any time, even mid-battle. The HUD follows.
 - **Per-player wider view** (side-by-side mode only): each player can widen their FOV by 0–50%. It works on top of the game's camera, so zooms during musou attacks keep working. Cutscenes are untouched.
 - **Per-player HUD scale** (50–200%) for the own HP gauge, the strong enemy's gauge and the minimap block, in both split modes.
+- **Smaller overhead gauges** (30–100%): the HP bars and names above officers' and soldiers' heads, one value for both players.
 - **In-game settings menu** on three keys, shown in the player's half of the screen.
 - All settings are remembered between sessions.
 - No game files are modified.
@@ -52,6 +53,7 @@ Settings, in F8 order:
 | Setting | Values | Shown in |
 |---|---|---|
 | Split | side by side ↔ top/bottom | both halves |
+| Overhead gauges | 30…100%, step 5% (HP bars and names above heads, both players) | both halves |
 | FOV P1 / P2 | +0…+50%, step 5% (side-by-side mode only, skipped otherwise) | that player's half |
 | HP gauge P1 / P2 | 50…200%, step 10% | that player's half |
 | Enemy gauge P1 / P2 | 50…200%, step 10% | that player's half |
@@ -67,6 +69,7 @@ All settings are saved to `ue4ss\Mods\VerticalSplit\settings.txt`. Keys, steps a
 - **HUD:** the 2-player HUD (`BP_2d_hud_multi`) holds two copies of the player HUD anchored to the top and bottom halves. The mod re-anchors them to the left and right halves.
 - **FOV:** the game animates the camera's `FieldOfView` itself, so changing that field makes the camera fight the mod. The mod sets the camera's `Overscan` instead, which widens the view on top of whatever FOV the game picks.
 - **HUD scale:** the mod finds the gauge widgets inside each player's part of the 2-player HUD (`bp_parts_gauge_pc_multi`, `BP_parts_gauge_enemy_multi`, `BP_parts_minimap`, `BP_parts_gauge_moral`) and sets their render scale, each growing from the corner it sits in.
+- **Overhead gauges:** the bars and names above heads (`BP_parts_gauge_head`) are drawn by world-space widget components: panels in the 3D world that both cameras see. The mod scales the widget inside each panel around its middle, so the gauges stay above the heads. That is why one scale applies to both players, and why gauges can only shrink: the panel has a fixed size and cuts off anything bigger.
 
 ## Building
 

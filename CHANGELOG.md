@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+- New F8 menu item "Overhead gauges": scales the HP bars and names above officers' and soldiers' heads, 30–100% in 5% steps. They shrink toward their middle, so they stay above the heads.
+- One value for both players: the game draws each overhead gauge once, as a panel in the 3D world that both cameras see. Shrinking only: the panel has a fixed size, so a bigger gauge would be cut off.
+
 ## 1.3.0
 - New in-game settings menu: F8 picks the next setting and shows it on screen, `[` / `]` change it. It replaces the separate FOV hotkeys; the split mode is now the first menu item.
 - Per-player scale (50–200%) for the own HP gauge, the strong enemy's gauge and the minimap block (minimap with the morale bar), in both split modes.

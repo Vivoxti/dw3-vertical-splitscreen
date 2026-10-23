@@ -2,11 +2,11 @@
 -- Splits the 2-player screen side by side (P1 left, P2 right) and moves each player's HUD to their half.
 -- Settings are changed in game: F8 picks the setting (shown on screen), [ and ] change it.
 -- Settings: split side by side / top-bottom, and per player: wider view (side-by-side mode only),
--- own HP gauge, strong enemy's gauge and minimap block scale.
+-- own HP gauge, strong enemy's gauge and minimap block scale; one scale for all overhead gauges.
 -- They are saved to settings.txt next to this mod. Requires UE4SS.
 
 local MOD_NAME = "VerticalSplit"
-local VERSION = "1.3.0"
+local VERSION = "1.3.1"
 
 local Config = {
     VerticalSplit = true,  -- default mode when settings.txt doesn't exist yet
@@ -26,6 +26,16 @@ local Config = {
     GaugeScaleStep = 10,
     GaugeScaleMin = 50,
     GaugeScaleMax = 200,
+
+    -- Scale in percent of the HP bars and names above officers' and soldiers' heads, one for both players:
+    -- the game draws each of them once, as a panel in the 3D world that both cameras see.
+    -- Shrinking only: the panel has a fixed size, a bigger gauge gets cut off at its edges.
+    HeadScaleStep = 5,
+    HeadScaleMin = 30,
+    HeadScaleMax = 100,
+    -- Height of the point the gauges shrink toward, 0 = panel top, 1 = panel bottom (right above the head).
+    -- Lower values keep a smaller gauge higher above the head.
+    HeadPivotY = 0.5,
 
     HintSeconds = 3,
 }
@@ -94,6 +104,7 @@ local FovOffset = { 0, 0 }
 local GaugeOrder = { "Hp", "Enemy", "Map" }
 local GaugeLabel = { Hp = "HP gauge", Enemy = "Enemy gauge", Map = "Minimap" }
 local GaugeScale = { Hp = { 100, 100 }, Enemy = { 100, 100 }, Map = { 100, 100 } }
+local HeadScale = 100
 local SettingsFile = ModDir .. "/settings.txt"
 local LegacyFovFile = ModDir .. "/fov.txt" -- v1.1.0
 
@@ -105,6 +116,8 @@ local function LoadSettings()
         v = tonumber(v)
         if key == "Vertical" and v then
             Config.VerticalSplit = v ~= 0
+        elseif key == "HeadScale" and v then
+            HeadScale = math.max(Config.HeadScaleMin, math.min(Config.HeadScaleMax, v))
         elseif key and v then
             local i = tonumber(key:match("^P(%d)$"))
             if i and FovOffset[i] then FovOffset[i] = math.max(Config.FovMin, math.min(Config.FovMax, v)) end
@@ -116,8 +129,9 @@ local function LoadSettings()
     end
     f:close()
     log("settings: %s split, FOV P1 +%g%%, P2 +%g%%, HP gauge P1 %g%%, P2 %g%%, enemy gauge P1 %g%%, P2 %g%%, "
-        .. "minimap P1 %g%%, P2 %g%%", Config.VerticalSplit and "vertical" or "horizontal", FovOffset[1], FovOffset[2],
-        GaugeScale.Hp[1], GaugeScale.Hp[2], GaugeScale.Enemy[1], GaugeScale.Enemy[2], GaugeScale.Map[1], GaugeScale.Map[2])
+        .. "minimap P1 %g%%, P2 %g%%, overhead gauges %g%%", Config.VerticalSplit and "vertical" or "horizontal",
+        FovOffset[1], FovOffset[2], GaugeScale.Hp[1], GaugeScale.Hp[2], GaugeScale.Enemy[1], GaugeScale.Enemy[2],
+        GaugeScale.Map[1], GaugeScale.Map[2], HeadScale)
 end
 
 local function SaveSettings()
@@ -130,6 +144,7 @@ local function SaveSettings()
     for _, kind in ipairs(GaugeOrder) do
         for i, s in ipairs(GaugeScale[kind]) do f:write(string.format("%sScaleP%d=%g\n", kind, i, s)) end
     end
+    f:write(string.format("HeadScale=%g\n", HeadScale))
     f:close()
 end
 
@@ -339,6 +354,71 @@ local function KeepGaugeScale()
     end
 end
 
+---------------------------------------------------------------------------
+-- overhead gauges (HP bars and names above heads): one scale for all of them, both players
+
+local HeadClass = "BP_parts_gauge_head_C"
+local HEAD_PIVOT = { X = 0.5, Y = Config.HeadPivotY }
+local HeadWidgets = {} -- address -> widget
+local HeadNew = {}     -- created since the last frame
+local HeadHostLogged = false
+
+local function headScaled(w)
+    local x = try(function() return w.RenderTransform.Scale.X end)
+    return x == nil or math.abs(x - HeadScale / 100) <= 0.001
+end
+
+local function setHeadScale(w)
+    if headScaled(w) then return end
+    local s = HeadScale / 100
+    w:SetRenderTransformPivot(HEAD_PIVOT)
+    w:SetRenderScale({ X = s, Y = s })
+end
+
+-- once: which component draws the gauges (a world-space WidgetComponent cuts off a bigger gauge)
+local function logHeadHost()
+    HeadHostLogged = true
+    for _, c in ipairs(FindAllOf("WidgetComponent") or {}) do
+        local w = prop(c, "Widget")
+        if valid(w) and classOf(w) == HeadClass then
+            log("overhead gauges drawn by %s, space %s", fullName(c), tostring(prop(c, "Space")))
+            return
+        end
+    end
+    log("overhead gauges: not drawn by a WidgetComponent")
+end
+
+local function ApplyHeadScaleAll()
+    HeadWidgets = {}
+    local n = 0
+    for _, w in ipairs(FindAllOf(HeadClass) or {}) do
+        if valid(w) then
+            HeadWidgets[w:GetAddress()] = w
+            setHeadScale(w)
+            n = n + 1
+        end
+    end
+    log("overhead gauges %g%% (%d widgets)", HeadScale, n)
+    if n > 0 and HeadScale ~= 100 and not HeadHostLogged then logHeadHost() end
+end
+
+-- Every frame: scale the gauges created since the last one. With check (once a second): put the
+-- scale back if the game reset it. Nothing to do at 100%, new widgets already have it.
+local function KeepHeadScale(check)
+    local new = HeadNew
+    HeadNew = {}
+    if HeadScale == 100 then return end
+    for _, w in ipairs(new) do
+        if valid(w) then
+            HeadWidgets[w:GetAddress()] = w
+            setHeadScale(w)
+        end
+    end
+    if not check then return end
+    for addr, w in pairs(HeadWidgets) do
+        if valid(w) then setHeadScale(w) else HeadWidgets[addr] = nil end
+    end
+end
 
 ---------------------------------------------------------------------------
 -- per-player FOV
@@ -518,12 +598,23 @@ local function ChangeGaugeScale(kind, i, dir)
     RescaleGauges()
 end
 
+local function ChangeHeadScale(dir)
+    HeadScale = math.max(Config.HeadScaleMin, math.min(Config.HeadScaleMax, HeadScale + dir * Config.HeadScaleStep))
+    SaveSettings()
+    ApplyHeadScaleAll()
+end
+
 -- player = whose half shows the hint (nil = both); sideBySideOnly = skipped in top/bottom mode
 local Settings = {
     {
         label = "Split",
         value = function() return Config.VerticalSplit and "side by side" or "top / bottom" end,
         change = function() ToggleSplit() end,
+    },
+    {
+        label = "Overhead gauges",
+        value = function() return string.format("%g%%", HeadScale) end,
+        change = function(dir) ChangeHeadScale(dir) end,
     },
 }
 for i = 1, 2 do
@@ -575,7 +666,10 @@ end
 -- hooks
 
 NotifyOnNewObject("/Script/UMG.UserWidget", function(obj)
-    if classOf(obj) == "BP_2d_hud_multi_C" then
+    local cls = classOf(obj)
+    if cls == HeadClass then
+        HeadNew[#HeadNew + 1] = obj -- scaled on the next frame, once constructed
+    elseif cls == "BP_2d_hud_multi_C" then
         delayed(500, function()
             if not valid(obj) then return end
             if Config.VerticalSplit then RelayoutMultiHud(obj, true) end
@@ -594,6 +688,7 @@ RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
         RestartPending = false
         if Config.VerticalSplit then RelayoutAll() end
         ApplyGaugeScaleAll()
+        if HeadScale ~= 100 then ApplyHeadScaleAll() end
     end)
 end)
 
@@ -601,7 +696,7 @@ RegisterKeyBind(Config.SelectKey, function() inGameThread(SelectNext) end)
 RegisterKeyBind(Config.DownKey, function() inGameThread(function() ChangeSelected(-1) end) end)
 RegisterKeyBind(Config.UpKey, function() inGameThread(function() ChangeSelected(1) end) end)
 
-local FovErrorLogged, GaugeErrorLogged = false, false
+local FovErrorLogged, GaugeErrorLogged, HeadErrorLogged = false, false, false
 LoopInGameThreadAfterFrames(1, function()
     local ok, err = pcall(ApplyFov)
     if not ok and not FovErrorLogged then
@@ -614,6 +709,11 @@ LoopInGameThreadAfterFrames(1, function()
             GaugeErrorLogged = true
             log("gauge scale error: %s", tostring(err))
         end
+    end
+    ok, err = pcall(KeepHeadScale, Frame % 60 == 45)
+    if not ok and not HeadErrorLogged then
+        HeadErrorLogged = true
+        log("overhead gauge scale error: %s", tostring(err))
     end
     return false
 end)

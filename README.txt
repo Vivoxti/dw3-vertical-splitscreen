@@ -1,5 +1,5 @@
 Vertical Split Screen - DYNASTY WARRIORS 3: Complete Edition Remastered
-Version 1.3.0
+Version 1.3.1
 
 ABOUT
 Local 2-player co-op/versus splits the screen top/bottom by default, which wastes
@@ -8,7 +8,8 @@ Player 1 on the left, Player 2 on the right. Each player's HUD (health, musou,
 officer gauge, morale, minimap, K.O. counter) is moved into that player's half.
 The split can be switched back to top/bottom at any time. In side-by-side mode
 each player can widen their own field of view (FOV), and each player can scale
-their own HP gauge, the strong enemy's gauge and the minimap block.
+their own HP gauge, the strong enemy's gauge and the minimap block. The HP bars
+and names above officers' and soldiers' heads can be made smaller.
 
 REQUIREMENTS
 UE4SS for DYNASTY WARRIORS 3 Complete Edition Remastered (Nexus Mods, mod #7).
@@ -27,6 +28,8 @@ F8     - next setting (its name and value are shown on screen)
 
 Settings, in F8 order:
 Split                - side by side <-> top/bottom (the HUD follows)
+Overhead gauges      - HP bars and names above heads 30..100%, step 5%
+                       (one value for both players)
 FOV P1 / P2          - wider view +0..+50%, step 5% (side-by-side mode only)
 HP gauge P1 / P2     - own HP gauge scale 50..200%, step 10%
 Enemy gauge P1 / P2  - strong enemy's gauge scale 50..200%, step 10%
