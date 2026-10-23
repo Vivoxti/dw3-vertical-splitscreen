@@ -59,6 +59,8 @@ Settings, in F8 order:
 
 All settings are saved to `ue4ss\Mods\VerticalSplit\settings.txt`. Keys, steps and ranges can be changed at the top of `Scripts\main.lua`.
 
+> **Upgrading from 1.2:** the separate hotkeys are gone. F8 no longer switches the split directly: it is now the first item of the F8 menu, changed with `[` / `]`. Player 2's FOV keys `;` / `'` are replaced by the menu item "FOV P2". Your saved split mode and FOV values are kept.
+
 ## How it works
 
 - **Split orientation:** the game uses Unreal Engine's stock split screen. The mod sets `GameMapsSettings.TwoPlayerSplitscreenLayout` at runtime. Editing `Engine.ini` doesn't work because the game deletes that file on exit.

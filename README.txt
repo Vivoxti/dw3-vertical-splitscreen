@@ -38,6 +38,12 @@ players always get the game's default view. All settings are saved to
 ue4ss\Mods\VerticalSplit\settings.txt.
 Keys, steps and ranges are at the top of Scripts\main.lua.
 
+UPGRADING FROM 1.2
+The separate hotkeys are gone. F8 no longer switches the split directly: it is
+now the first item of the F8 menu, changed with [ / ]. Player 2's FOV keys
+; / ' are replaced by the menu item "FOV P2". Your saved split mode and FOV
+values are kept.
+
 UNINSTALL
 Delete the ue4ss\Mods\VerticalSplit folder.
 
