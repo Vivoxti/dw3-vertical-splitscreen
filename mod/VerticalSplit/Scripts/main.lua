@@ -6,7 +6,7 @@
 -- They are saved to settings.txt next to this mod. Requires UE4SS.
 
 local MOD_NAME = "VerticalSplit"
-local VERSION = "1.3.1"
+local VERSION = "1.4.0"
 
 local Config = {
     VerticalSplit = true,  -- default mode when settings.txt doesn't exist yet
@@ -36,6 +36,13 @@ local Config = {
     -- Height of the point the gauges shrink toward, 0 = panel top, 1 = panel bottom (right above the head).
     -- Lower values keep a smaller gauge higher above the head.
     HeadPivotY = 0.5,
+
+    -- Battle message bars (event notices, officers' lines) in side-by-side mode: one per player,
+    -- across that player's half, BarGap HUD units above the top of their HP gauge.
+    BarGap = 8,
+    BarFallbackY = 0.8, -- bar position in screen height if the HP gauge can't be measured
+    TalkWidth = 1300,   -- width of the officers' lines (portrait + text); shrunk if the half is narrower
+    BarFadeSeconds = 0.15, -- fade in / out time of the message text (no background, no other animation)
 
     HintSeconds = 3,
 }
@@ -226,6 +233,8 @@ local function setCanvasLayout(slot, l)
     slot:SetAlignment(l.Alignment)
 end
 
+local RelayoutBars -- message bars, below
+
 local function RelayoutMultiHud(hud, sideBySide)
     local tree = prop(hud, "WidgetTree")
     if not valid(tree) then return end
@@ -244,6 +253,10 @@ local function RelayoutMultiHud(hud, sideBySide)
         end
     end)
     log("2P HUD %s (%d widgets)", sideBySide and "side by side" or "original", done)
+    if RelayoutBars then
+        local ok, err = pcall(RelayoutBars, hud, sideBySide)
+        if not ok then log("message bars error: %s", tostring(err)) end
+    end
 end
 
 local function RelayoutAll()
@@ -514,6 +527,333 @@ local function ApplyFov()
 end
 
 ---------------------------------------------------------------------------
+-- battle message bars: event notices (BP_parts_smes) and officers' lines with portrait (BP_talk).
+-- The 2P HUD has one of each, stretched across the middle of the screen. In side-by-side mode the
+-- game's bar keeps running (its timing and message queue) but is drawn far above the screen; each player gets
+-- a copy in their half right above their HP gauge. The copies show only the text (and the portrait):
+-- no background, no flashing, no slide/flash animations, just a short fade in and out that follows
+-- when the game's bar shows a message. Messages are the same for both players: the game has one queue.
+
+local BarNames = { "BP_parts_smes", "BP_talk" }
+-- name -> { hud, orig, all, contents, copies = { P1, P2 }, slots, pairs = { per copy }, alpha, key, placed, failed }
+local Bars = {}
+local BAR_HALF_HEIGHT = 30 -- the bars are 60 units high, centered on their anchor
+local BAR_VISIBLE, BAR_COLLAPSED, BAR_HIDDEN, BAR_HIT_TEST_INVISIBLE = 0, 1, 2, 3
+
+local function hudRoot(hud)
+    local tree = prop(hud, "WidgetTree")
+    local root = valid(tree) and prop(tree, "RootWidget")
+    if valid(root) and isA(root, "/Script/UMG.CanvasPanel") then return root end
+end
+
+local function canvasChild(root, name)
+    local found
+    local slots = prop(root, "Slots")
+    if not slots then return nil end
+    slots:ForEach(function(_, e)
+        local s = e:get()
+        local c = valid(s) and prop(s, "Content")
+        if valid(c) and nameOf(c) == name then found = c end
+    end)
+    return found
+end
+
+-- widgets in tree order, each with whether it is inside the background ("base" panel)
+local function flatten(w)
+    local list = {}
+    -- ctx is a string: walk() treats a returned false as "skip the children"
+    walk(w, function(x, ctx)
+        local inBase = ctx == "base" or nameOf(x) == "base"
+        list[#list + 1] = { w = x, base = inBase }
+        return inBase and "base" or "out"
+    end, "out")
+    return list
+end
+
+-- original and copy widgets matched by tree order (same class, so same tree)
+local function makePairs(orig, copy)
+    local a, b = flatten(orig), flatten(copy)
+    if #a == 0 or #a ~= #b then return nil end
+    local list = {}
+    for k = 1, #a do
+        local o, c = a[k].w, b[k].w
+        if classOf(o) ~= classOf(c) then return nil end
+        local kind
+        if isA(o, "/Script/UMG.TextBlock") or isA(o, "/Script/UMG.RichTextBlock") then
+            kind = "text"
+        elseif isA(o, "/Script/UMG.Image") then
+            kind = "image"
+        end
+        list[k] = { o = o, c = c, kind = kind, base = a[k].base, root = (k == 1) }
+    end
+    return list
+end
+
+local function findNamed(orig, name)
+    for _, e in ipairs(flatten(orig)) do
+        if nameOf(e.w) == name then return e.w end
+    end
+end
+
+local function near(a, b) return math.abs(a - b) < 0.001 end
+
+-- what the game's bar would show: texts, portrait and which of them are visible
+local function contentKey(pairs)
+    local parts = {}
+    for _, p in ipairs(pairs) do
+        if not p.root and not p.base then
+            parts[#parts + 1] = tostring(p.o:GetVisibility())
+            if p.kind == "text" then
+                parts[#parts + 1] = p.o:GetText():ToString()
+            elseif p.kind == "image" then
+                local res = p.o.Brush.ResourceObject
+                parts[#parts + 1] = valid(res) and tostring(res:GetAddress()) or "-"
+            end
+        end
+    end
+    return table.concat(parts, "\1")
+end
+
+-- copy the game's content into a copy; background hidden, everything else fully opaque and still
+local function syncCopy(pairs)
+    for _, p in ipairs(pairs) do
+        if not p.root then
+            local c = p.c
+            if p.base then
+                if c:GetVisibility() ~= BAR_COLLAPSED then c:SetVisibility(BAR_COLLAPSED) end
+            else
+                local v = p.o:GetVisibility()
+                if c:GetVisibility() ~= v then c:SetVisibility(v) end
+                if not near(c.RenderOpacity, 1) then c:SetRenderOpacity(1) end
+                if p.kind == "text" then
+                    local s = p.o:GetText():ToString()
+                    if s ~= p.text then
+                        p.text = s
+                        c:SetText(FText(s))
+                    end
+                elseif p.kind == "image" then
+                    local res = p.o.Brush.ResourceObject -- officer portrait changes per line
+                    local addr = valid(res) and res:GetAddress() or 0
+                    if addr ~= p.res then
+                        p.res = addr
+                        if addr ~= 0 then c:SetBrushResourceObject(res) end
+                    end
+                    local a = c.ColorAndOpacity
+                    if not near(a.A, 1) then c:SetColorAndOpacity({ R = a.R, G = a.G, B = a.B, A = 1 }) end
+                end
+            end
+        end
+    end
+end
+
+-- true while the game's bar shows a message: it is on (collapsed between messages) and its own
+-- (native) fade times its appear/disappear animations is at least GAME_SHOWN
+local GAME_SHOWN = 0.3
+local function gameShows(b)
+    local v = b.orig:GetVisibility()
+    if v == BAR_COLLAPSED or v == BAR_HIDDEN then return false end
+    local a = valid(b.all) and b.all.RenderOpacity or 1
+    local c = valid(b.contents) and b.contents.RenderOpacity or 1
+    return b.orig.RenderOpacity * a * c >= GAME_SHOWN
+end
+
+local Statics
+local function frameSeconds(ctx)
+    if not valid(Statics) then Statics = StaticFindObject("/Script/Engine.Default__GameplayStatics") end
+    local dt = try(function() return Statics:GetWorldDeltaSeconds(ctx) end)
+    if not dt or dt <= 0 or dt > 0.25 then dt = 1 / 60 end
+    return dt
+end
+
+-- The game's bar keeps running in its place but is drawn far above the screen. Only the render
+-- offset moves: Slate stops ticking (and animating) a widget whose layout is off screen.
+local ORIG_HIDE_Y = -20000
+local function hideOriginal(b)
+    local t = b.orig.RenderTransform.Translation
+    if not (near(t.X, 0) and near(t.Y, ORIG_HIDE_Y)) then
+        b.orig:SetRenderTranslation({ X = 0, Y = ORIG_HIDE_Y })
+    end
+end
+
+local function updateBar(b, dt)
+    hideOriginal(b)
+    for _, c in ipairs(b.copies) do
+        if c:IsAnyAnimationPlaying() then c:StopAllAnimations() end
+    end
+
+    local key = gameShows(b) and contentKey(b.pairs[1]) or nil
+    -- new content waits until the old one has faded out
+    if b.alpha == 0 and key and key ~= b.key then
+        for _, pl in ipairs(b.pairs) do syncCopy(pl) end
+        b.key = key
+    end
+    local target = (key ~= nil and key == b.key) and 1 or 0
+
+    local step = dt / math.max(Config.BarFadeSeconds, 0.01)
+    local alpha = b.alpha
+    if target > alpha then
+        alpha = math.min(1, alpha + step)
+    elseif target < alpha then
+        alpha = math.max(0, alpha - step)
+    end
+    b.alpha = alpha
+    if alpha == 0 then b.key = nil end
+    local vis = alpha > 0 and BAR_HIT_TEST_INVISIBLE or BAR_COLLAPSED
+    for _, c in ipairs(b.copies) do
+        if c:GetVisibility() ~= vis then c:SetVisibility(vis) end
+        if not near(c.RenderOpacity, alpha) then c:SetRenderOpacity(alpha) end
+    end
+end
+
+local WidgetLib, LayoutLib
+
+-- top of player i's HP gauge as a fraction of the screen height: the gauge grows up from the
+-- bottom edge with its scale, at 100% its top is at BarFallbackY
+local function gaugeTop(i)
+    local s = (GaugeScale.Hp[i] or 100) / 100
+    return 1 - (1 - Config.BarFallbackY) * s
+end
+
+-- half of the screen width in HUD units (nil if unknown)
+local function halfWidth(ctx)
+    return try(function()
+        if not valid(LayoutLib) then LayoutLib = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary") end
+        local size = LayoutLib:GetViewportSize(ctx)
+        local scale = LayoutLib:GetViewportScale(ctx)
+        if size.X > 0 and scale > 0 then return size.X / scale / 2 end
+    end)
+end
+
+local PlacedLog = ""
+local function PlaceBars(force)
+    if not next(Bars) then return end
+    local hud = FindFirstOf("BP_2d_hud_multi_C")
+    local half = valid(hud) and halfWidth(hud)
+    local ys = { gaugeTop(1), gaugeTop(2) }
+    local talkScale = half and math.min(1, half * 0.96 / Config.TalkWidth) or 1
+    for name, b in pairs(Bars) do
+        for i, slot in ipairs(b.slots or {}) do
+            local y = ys[i]
+            if valid(slot) and (force or not b.placed[i] or math.abs(b.placed[i] - y) > 0.002) then
+                b.placed[i] = y
+                setCanvasLayout(slot, {
+                    Anchors = { Minimum = { X = (i - 1) * 0.5, Y = y }, Maximum = { X = i * 0.5, Y = y } },
+                    Offsets = { Left = 0, Top = -(BAR_HALF_HEIGHT + Config.BarGap), Right = 0, Bottom = 2 * BAR_HALF_HEIGHT },
+                    Alignment = { X = 0.5, Y = 0.5 },
+                    AutoSize = false,
+                })
+            end
+        end
+        if name == "BP_talk" and b.copies and (force or not b.scale or not near(b.scale, talkScale)) then
+            b.scale = talkScale
+            for _, w in ipairs(b.copies) do
+                if valid(w) then
+                    w:SetRenderTransformPivot({ X = 0.5, Y = 1 })
+                    w:SetRenderScale({ X = talkScale, Y = talkScale })
+                end
+            end
+        end
+    end
+    local msg = string.format("message bars: P1 at %.3f, P2 at %.3f of screen height, officers' lines %.0f%%%s",
+        ys[1], ys[2], talkScale * 100, half and "" or " (screen width unknown)")
+    if msg ~= PlacedLog then
+        PlacedLog = msg
+        log("%s", msg)
+    end
+end
+
+local function createCopy(hud, orig)
+    if not valid(WidgetLib) then WidgetLib = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary") end
+    local pc = try(function() return hud:GetOwningPlayer() end)
+    if not valid(pc) then pc = FindFirstOf("PlayerController") end
+    local copy = try(function() return WidgetLib:Create(hud, orig:GetClass(), pc) end)
+    return valid(copy) and copy or nil
+end
+
+local function dropBar(b)
+    if not b then return end
+    for _, c in ipairs(b.copies or {}) do
+        if valid(c) then try(function() c:RemoveFromParent() end) end
+    end
+    if valid(b.orig) and b.origOffset then
+        try(function() b.orig:SetRenderTranslation(b.origOffset) end)
+    end
+end
+
+local function makeBar(hud, root, name, orig)
+    local t = orig.RenderTransform.Translation
+    local b = { hud = fullName(hud), orig = orig, copies = {}, slots = {}, pairs = {}, placed = {}, alpha = 0,
+        all = findNamed(orig, "All"), contents = findNamed(orig, "Contents"),
+        origOffset = near(t.Y, ORIG_HIDE_Y) and { X = 0, Y = 0 } or { X = t.X, Y = t.Y } }
+    for i = 1, 2 do
+        local copy = createCopy(hud, orig)
+        local slot = copy and root:AddChildToCanvas(copy)
+        local pl = valid(slot) and makePairs(orig, copy)
+        if not pl then
+            if copy then try(function() copy:RemoveFromParent() end) end
+            dropBar(b)
+            log("%s: cannot make the per-player copies, the game's own bar stays", name)
+            return { hud = b.hud, orig = orig, failed = true }
+        end
+        copy:SetVisibility(BAR_COLLAPSED)
+        copy:SetRenderOpacity(0)
+        -- the copy never gets a message: keep its blueprint Tick (message timer) from running anything
+        try(function() copy.bHasScriptImplementedTick = false end)
+        if prop(copy, "DefaultTimeSec") then try(function() copy.DefaultTimeSec = 1e9 end) end
+        local ok, err = pcall(syncCopy, pl) -- hides the background right away
+        if not ok then log("%s: %s", name, tostring(err)) end
+        b.copies[i], b.slots[i], b.pairs[i] = copy, slot, pl
+    end
+    hideOriginal(b)
+    log("%s: per-player copies made (%d widgets each)", name, #b.pairs[1])
+    return b
+end
+
+RelayoutBars = function(hud, sideBySide)
+    local root = hudRoot(hud)
+    if not root then return end
+    local key = fullName(hud)
+    for _, name in ipairs(BarNames) do
+        local orig = canvasChild(root, name)
+        local b = Bars[name]
+        if sideBySide then
+            local current = b and b.hud == key and valid(b.orig)
+                and (b.failed or (valid(b.copies[1]) and valid(b.copies[2])))
+            if valid(orig) and not current then
+                dropBar(b)
+                Bars[name] = makeBar(hud, root, name, orig)
+            end
+        else
+            dropBar(b)
+            Bars[name] = nil
+        end
+    end
+    if sideBySide then PlaceBars(true) end
+end
+
+-- every frame in side-by-side mode; re-place the bars twice a second (HP gauge scale may change)
+local function UpdateBars()
+    if not Config.VerticalSplit or not next(Bars) then return end
+    local dt
+    for name, b in pairs(Bars) do
+        if not b.failed then
+            if valid(b.orig) and valid(b.copies[1]) and valid(b.copies[2]) then
+                dt = dt or frameSeconds(b.orig)
+                local ok, err = pcall(updateBar, b, dt)
+                if not ok and not b.errorLogged then
+                    b.errorLogged = true
+                    log("%s: %s", name, tostring(err))
+                end
+            else
+                dropBar(b) -- HUD gone; RelayoutBars makes new copies with the next HUD
+                Bars[name] = nil
+            end
+        end
+    end
+    if Frame % 30 == 15 then PlaceBars(false) end
+end
+
+---------------------------------------------------------------------------
 -- on-screen hint inside the 2P HUD (one text per player, placed in that player's view)
 
 local Hints = {}    -- player index -> { hud, text, slot }
@@ -696,7 +1036,7 @@ RegisterKeyBind(Config.SelectKey, function() inGameThread(SelectNext) end)
 RegisterKeyBind(Config.DownKey, function() inGameThread(function() ChangeSelected(-1) end) end)
 RegisterKeyBind(Config.UpKey, function() inGameThread(function() ChangeSelected(1) end) end)
 
-local FovErrorLogged, GaugeErrorLogged, HeadErrorLogged = false, false, false
+local FovErrorLogged, GaugeErrorLogged, HeadErrorLogged, BarsErrorLogged = false, false, false, false
 LoopInGameThreadAfterFrames(1, function()
     local ok, err = pcall(ApplyFov)
     if not ok and not FovErrorLogged then
@@ -714,6 +1054,11 @@ LoopInGameThreadAfterFrames(1, function()
     if not ok and not HeadErrorLogged then
         HeadErrorLogged = true
         log("overhead gauge scale error: %s", tostring(err))
+    end
+    ok, err = pcall(UpdateBars)
+    if not ok and not BarsErrorLogged then
+        BarsErrorLogged = true
+        log("message bars error: %s", tostring(err))
     end
     return false
 end)

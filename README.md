@@ -16,6 +16,7 @@ A [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) Lua mod that makes the local 2-p
 - **Per-player wider view** (side-by-side mode only): each player can widen their FOV by 0–50%. It works on top of the game's camera, so zooms during musou attacks keep working. Cutscenes are untouched.
 - **Per-player HUD scale** (50–200%) for the own HP gauge, the strong enemy's gauge and the minimap block, in both split modes.
 - **Smaller overhead gauges** (30–100%): the HP bars and names above officers' and soldiers' heads, one value for both players.
+- **Message bars per player** (side-by-side mode): the battle notices and officers' lines get one bar per player in their half, just above their HP gauge, text only, with a quick fade instead of the game's animations.
 - **In-game settings menu** on three keys, shown in the player's half of the screen.
 - All settings are remembered between sessions.
 - No game files are modified.
@@ -70,6 +71,8 @@ All settings are saved to `ue4ss\Mods\VerticalSplit\settings.txt`. Keys, steps a
 - **FOV:** the game animates the camera's `FieldOfView` itself, so changing that field makes the camera fight the mod. The mod sets the camera's `Overscan` instead, which widens the view on top of whatever FOV the game picks.
 - **HUD scale:** the mod finds the gauge widgets inside each player's part of the 2-player HUD (`bp_parts_gauge_pc_multi`, `BP_parts_gauge_enemy_multi`, `BP_parts_minimap`, `BP_parts_gauge_moral`) and sets their render scale, each growing from the corner it sits in.
 - **Overhead gauges:** the bars and names above heads (`BP_parts_gauge_head`) are drawn by world-space widget components: panels in the 3D world that both cameras see. The mod scales the widget inside each panel around its middle, so the gauges stay above the heads. That is why one scale applies to both players, and why gauges can only shrink: the panel has a fixed size and cuts off anything bigger.
+
+- **Message bars:** the 2-player HUD has one event-notice bar (`BP_parts_smes`) and one officers' line bar (`BP_talk`) across the middle. The mod keeps the game's bars running (they hold the timing and the message queue) but draws them far above the screen, and makes one copy per player. The copies take the text and portrait from the game's bar, have no background, and fade in and out when the game's bar shows a message. They are placed above each player's HP gauge.
 
 ## Building
 

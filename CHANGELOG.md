@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0
+- Battle message bars in side-by-side mode: the event notices and the officers' lines (with portrait) used to be one bar across the middle of the screen. Now each player gets their own bar in their half, just above their HP gauge. Both players see the same messages: the game has a single message queue.
+- The bars show only the text (and the portrait): no background, no flashing, no slide animations, just a quick fade in and out.
+- The bars follow the HP gauge scale of each player. Officers' lines shrink to fit if a half is narrower than the line. In top/bottom mode the game's own bars are untouched.
+
 ## 1.3.1
 - New F8 menu item "Overhead gauges": scales the HP bars and names above officers' and soldiers' heads, 30–100% in 5% steps. They shrink toward their middle, so they stay above the heads.
 - One value for both players: the game draws each overhead gauge once, as a panel in the 3D world that both cameras see. Shrinking only: the panel has a fixed size, so a bigger gauge would be cut off.
